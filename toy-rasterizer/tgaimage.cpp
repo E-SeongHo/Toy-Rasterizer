@@ -5,16 +5,16 @@
 #include <math.h>
 #include "tgaimage.h"
 
-TGAImage::TGAImage() : data(NULL), width(0), height(0), bytespp(0) { }
-TGAImage::TGAImage(int w, int h, int bpp) : data(NULL), width(w), height(h), bytespp(bpp) 
-{
+TGAImage::TGAImage() : data(NULL), width(0), height(0), bytespp(0) {
+}
+
+TGAImage::TGAImage(int w, int h, int bpp) : data(NULL), width(w), height(h), bytespp(bpp) {
 	unsigned long nbytes = width * height * bytespp;
 	data = new unsigned char[nbytes];
 	memset(data, 0, nbytes);
 }
 
-TGAImage::TGAImage(const TGAImage& img)
-{
+TGAImage::TGAImage(const TGAImage& img) {
 	width = img.width;
 	height = img.height;
 	bytespp = img.bytespp;
@@ -23,12 +23,12 @@ TGAImage::TGAImage(const TGAImage& img)
 	memcpy(data, img.data, nbytes);
 }
 
-TGAImage::~TGAImage() { if (data) delete[] data; }
+TGAImage::~TGAImage() {
+	if (data) delete[] data;
+}
 
-TGAImage& TGAImage::operator=(const TGAImage& img)
-{
-	if (this != &img)
-	{
+TGAImage& TGAImage::operator =(const TGAImage& img) {
+	if (this != &img) {
 		if (data) delete[] data;
 		width = img.width;
 		height = img.height;
@@ -40,22 +40,19 @@ TGAImage& TGAImage::operator=(const TGAImage& img)
 	return *this;
 }
 
-bool TGAImage::read_tga_file(const char* filename)
-{
+bool TGAImage::read_tga_file(const char* filename) {
 	if (data) delete[] data;
 	data = NULL;
 	std::ifstream in;
 	in.open(filename, std::ios::binary);
-	if (!in.is_open())
-	{
+	if (!in.is_open()) {
 		std::cerr << "can't open file " << filename << "\n";
 		in.close();
 		return false;
 	}
 	TGA_Header header;
 	in.read((char*)&header, sizeof(header));
-	if (!in.good())
-	{
+	if (!in.good()) {
 		in.close();
 		std::cerr << "an error occured while reading the header\n";
 		return false;
@@ -63,43 +60,39 @@ bool TGAImage::read_tga_file(const char* filename)
 	width = header.width;
 	height = header.height;
 	bytespp = header.bitsperpixel >> 3;
-	if (width <= 0 || height <= 0 || (bytespp != GRAYSCALE && bytespp != RGB && bytespp != RGBA))
-	{
+	if (width <= 0 || height <= 0 || (bytespp != GRAYSCALE && bytespp != RGB && bytespp != RGBA)) {
 		in.close();
 		std::cerr << "bad bpp (or width/height) value\n";
 		return false;
 	}
 	unsigned long nbytes = bytespp * width * height;
 	data = new unsigned char[nbytes];
-	if (3 == header.datatypecode || 2 == header.datatypecode)
-	{
+	if (3 == header.datatypecode || 2 == header.datatypecode) {
 		in.read((char*)data, nbytes);
-		if (!in.good())
-		{
-			in.close();
-			std::cerr << "an error occured while reading the data\n";
-			return false;
-		}
-	} 
-	else if (10 == header.datatypecode || 11 == header.datatypecode)
-	{
-		if (!load_rle_data(in))
-		{
+		if (!in.good()) {
 			in.close();
 			std::cerr << "an error occured while reading the data\n";
 			return false;
 		}
 	}
-	else
-	{
+	else if (10 == header.datatypecode || 11 == header.datatypecode) {
+		if (!load_rle_data(in)) {
+			in.close();
+			std::cerr << "an error occured while reading the data\n";
+			return false;
+		}
+	}
+	else {
 		in.close();
 		std::cerr << "unknown file format " << (int)header.datatypecode << "\n";
 		return false;
 	}
-	
-	if (!(header.imagedescriptor & 0x20)) { flip_vertically(); }
-	if (header.imagedescriptor & 0x10) { flip_horizontally(); }
-
+	if (!(header.imagedescriptor & 0x20)) {
+		flip_vertically();
+	}
+	if (header.imagedescriptor & 0x10) {
+		flip_horizontally();
+	}
 	std::cerr << width << "x" << height << "/" << bytespp * 8 << "\n";
 	in.close();
 	return true;
