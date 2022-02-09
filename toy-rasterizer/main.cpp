@@ -8,6 +8,9 @@ const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
 const TGAColor green = TGAColor(0, 255, 0, 255);
 
+const int width = 800;
+const int height = 800;
+
 void line(Vec2i p0, Vec2i p1, TGAImage& image, TGAColor color) {
     bool steep = false;
     if (std::abs(p0.x - p1.x) < std::abs(p0.y - p1.y))
@@ -48,8 +51,10 @@ void triangle(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor color)
     line(p2, p0, image, color);
 }
 
+// Scan line algorithm
 void filled_triangle(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor color)
 {
+    if (p0.y == p1.y && p0.y == p2.y) return;
     // sort by y(p0, p1, p2)
     if (p0.y > p1.y) std::swap(p0, p1);
     if (p1.y > p2.y) std::swap(p1, p2);
@@ -57,32 +62,19 @@ void filled_triangle(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor col
  
     int height = p2.y - p0.y;
 
-    // upper side
-    for (int y = p2.y; y >= p1.y; y--)
+    for (int i = 0; i < height; i++)
     {
-        int upper_height = p2.y - p1.y + 1;
-        float alpha = float(p2.y - y) / height;
-        float beta = float(p2.y - y) / upper_height;
-
-        Vec2i A = p0 * alpha + p2 * (1 - alpha);
-        Vec2i B = p1 * beta + p2 * (1 - beta);
-        if (A.x > B.x) std::swap(A.x, B.x);
-        for (int i = A.x; i <= B.x; i++)
-            image.set(i, y, color);
-    }
-
-    // lower side
-    for (int y = p0.y; y <= p1.y; y++)
-    {
-        int lower_hegiht = p1.y - p0.y;
-        float alpha = float(y - p0.y) / height;
-        float beta = float(y - p0.y) / lower_hegiht;
-
-        Vec2i A = p2 * alpha + p0 * (1 - alpha);
-        Vec2i B = p1 * beta + p0 * (1 - beta);
-        if (A.x > B.x) std::swap(A.x, B.x);
-        for (int i = A.x; i <= B.x; i++)
-            image.set(i, y, color);
+        bool upper = i > p1.y - p0.y || p1.y == p0.y;
+        int cutted_height = upper ? p2.y - p1.y : p1.y - p0.y;
+        float alpha = static_cast<float>(i) / height;
+        float beta = static_cast<float>(i - (upper ? p1.y - p0.y : 0)) / cutted_height;
+        Vec2i A = p0 + (p2 - p0) * alpha;
+        Vec2i B = upper ? p1 + (p2 - p1) * beta : p0 + (p1 - p0) * beta;
+        if (A.x > B.x) std::swap(A, B);
+        for (int j = A.x; j <= B.x; j++)
+        {
+            image.set(j, p0.y + i, color);
+        }
     }
 }
 
@@ -90,17 +82,37 @@ void filled_triangle(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor col
 
 int main(int argc, char** argv) 
 {
-    TGAImage image(200, 200, TGAImage::RGB);
+    TGAImage image(width, height, TGAImage::RGB);
 
-    Vec2i t0[3] = { Vec2i(10, 70),   Vec2i(50, 160),  Vec2i(70, 80) };
-    Vec2i t1[3] = { Vec2i(180, 50),  Vec2i(150, 1),   Vec2i(70, 180) };
-    Vec2i t2[3] = { Vec2i(180, 150), Vec2i(120, 160), Vec2i(130, 180) };
-    filled_triangle(t0[0], t0[1], t0[2], image, red);
-    filled_triangle(t1[0], t1[1], t1[2], image, white);
-    filled_triangle(t2[0], t2[1], t2[2], image, green);
+    Model* model = new Model("obj\\african_head.obj");
+
+    Vec3f light_dir(0, 0, -1);
+
+    for (int i = 0; i < model->nfaces(); i++)
+    {
+        std::vector<int> face = model->face(i);
+        Vec2i screen_coords[3];
+        Vec3f world_coords[3];
+        for (int j = 0; j < 3; j++)
+        {
+            Vec3f v = model->vert(face[j]);
+            screen_coords[j] = Vec2i((v.x + 1.0) * width / 2.0, (v.y + 1.0) * height / 2.0);
+            world_coords[j] = v;
+        }
+        Vec3f n = (world_coords[2] - world_coords[1]) ^ (world_coords[1] - world_coords[0]); // cross product
+        n.normalize();
+        float intensity = n * light_dir; // dot product
+        if (intensity > 0)
+        {
+            filled_triangle(screen_coords[0], screen_coords[1], screen_coords[2], image, TGAColor(intensity * 255, intensity * 255, intensity*255, 255));
+        }
+
+    }
 
     image.flip_vertically();
-    image.write_tga_file("output\\output6.tga");
+    image.write_tga_file("output\\output8_gouraud-shading.tga");
+
+    delete model;
 
     return 0;
 }
