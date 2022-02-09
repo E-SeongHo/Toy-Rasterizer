@@ -6,67 +6,101 @@
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
+const TGAColor green = TGAColor(0, 255, 0, 255);
 
-Model* model = NULL;
-const int width = 800;
-const int height = 800;
-
-void line(int x0, int y0, int x1, int y1, TGAImage& image, TGAColor color) {
+void line(Vec2i p0, Vec2i p1, TGAImage& image, TGAColor color) {
     bool steep = false;
-    if (std::abs(x0 - x1) < std::abs(y0 - y1))
+    if (std::abs(p0.x - p1.x) < std::abs(p0.y - p1.y))
     {   // transpose to make dx > dy
-        std::swap(x0, y0);
-        std::swap(x1, y1);
+        std::swap(p0.x, p0.y);
+        std::swap(p1.x, p1.y);
         steep = true;
     }
-    if (x0 > x1)
+    if (p0.x > p1.x)
     {   // change p1 <-> p2 to start from left
-        std::swap(x0, x1);
-        std::swap(y0, y1);
+        std::swap(p0.x, p1.x);
+        std::swap(p0.y, p1.y);
     }
 
-    int dx = x1 - x0;
-    int dy = y1 - y0;
+    int dx = p1.x - p0.x;
+    int dy = p1.y - p0.y;
     float derror2 = std::abs(dy)*2;
     float error2 = 0;
-    int y = y0;
+    int y = p0.y;
 
-    for (int x = x0; x <= x1; x++)
+    for (int x = p0.x; x <= p1.x; x++)
     {
         if (steep) image.set(y, x, color);
         else image.set(x, y, color);
         error2 += derror2;
         if (error2 > dx)
         {
-            y += (y1 > y0 ? 1 : -1);
+            y += (p1.y > p0.y ? 1 : -1);
             error2 -= dx * 2;
         }
     }
 }
 
-int main(int argc, char** argv) {
-    if (2 == argc) model = new Model(argv[1]);
-    else model = new Model("obj\\african_head.obj");
-    
-    TGAImage image(width, height, TGAImage::RGB);
-    for (int i = 0; i < model->nfaces(); i++)
+void triangle(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor color)
+{
+    line(p0, p1, image, color);
+    line(p1, p2, image, color);
+    line(p2, p0, image, color);
+}
+
+void filled_triangle(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor color)
+{
+    // sort by y(p0, p1, p2)
+    if (p0.y > p1.y) std::swap(p0, p1);
+    if (p1.y > p2.y) std::swap(p1, p2);
+    if (p0.y > p1.y) std::swap(p0, p1);
+ 
+    int height = p2.y - p0.y;
+
+    // upper side
+    for (int y = p2.y; y >= p1.y; y--)
     {
-        std::vector<int> face = model->face(i);
-        for (int j = 0; j < 3; j++)
-        {
-            Vec3f v0 = model->vert(face[j]);
-            Vec3f v1 = model->vert(face[(j + 1) % 3]);
-            int x0 = (v0.x + 1.0) * width / 2.0;
-            int y0 = (v0.y + 1.0) * height / 2.0;
-            int x1 = (v1.x + 1.0) * width / 2.0;
-            int y1 = (v1.y + 1.0) * height / 2.0;
-            line(x0, y0, x1, y1, image, white);
-        }
+        int upper_height = p2.y - p1.y + 1;
+        float alpha = float(p2.y - y) / height;
+        float beta = float(p2.y - y) / upper_height;
+
+        Vec2i A = p0 * alpha + p2 * (1 - alpha);
+        Vec2i B = p1 * beta + p2 * (1 - beta);
+        if (A.x > B.x) std::swap(A.x, B.x);
+        for (int i = A.x; i <= B.x; i++)
+            image.set(i, y, color);
     }
-    
-    image.flip_vertically(); 
-    image.write_tga_file("output4.tga");
-    delete model;
+
+    // lower side
+    for (int y = p0.y; y <= p1.y; y++)
+    {
+        int lower_hegiht = p1.y - p0.y;
+        float alpha = float(y - p0.y) / height;
+        float beta = float(y - p0.y) / lower_hegiht;
+
+        Vec2i A = p2 * alpha + p0 * (1 - alpha);
+        Vec2i B = p1 * beta + p0 * (1 - beta);
+        if (A.x > B.x) std::swap(A.x, B.x);
+        for (int i = A.x; i <= B.x; i++)
+            image.set(i, y, color);
+    }
+}
+
+
+
+int main(int argc, char** argv) 
+{
+    TGAImage image(200, 200, TGAImage::RGB);
+
+    Vec2i t0[3] = { Vec2i(10, 70),   Vec2i(50, 160),  Vec2i(70, 80) };
+    Vec2i t1[3] = { Vec2i(180, 50),  Vec2i(150, 1),   Vec2i(70, 180) };
+    Vec2i t2[3] = { Vec2i(180, 150), Vec2i(120, 160), Vec2i(130, 180) };
+    filled_triangle(t0[0], t0[1], t0[2], image, red);
+    filled_triangle(t1[0], t1[1], t1[2], image, white);
+    filled_triangle(t2[0], t2[1], t2[2], image, green);
+
+    image.flip_vertically();
+    image.write_tga_file("output\\output6.tga");
 
     return 0;
 }
