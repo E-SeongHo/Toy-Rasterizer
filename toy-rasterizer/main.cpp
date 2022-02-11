@@ -111,7 +111,7 @@ void triangle(Vec3f* pts, float* zbuffer, TGAImage& image, TGAColor color)
     Vec3f P;
     for (P.x = bboxmin.x; P.x <= bboxmax.x; P.x++)
     {
-        for (P.y = bboxmin.y; P.y <= bboxmin.y; P.y++)
+        for (P.y = bboxmin.y; P.y <= bboxmax.y; P.y++)
         {
             Vec3f bc = barycentric(pts[0], pts[1], pts[2], P);
             if (bc.x < 0 || bc.y < 0 || bc.z < 0) continue;
@@ -151,12 +151,21 @@ int main(int argc, char** argv)
     for (int i = 0; i < model->nfaces(); i++)
     {
         std::vector<int> face = model->face(i);
-        Vec3f pts[3];
+        Vec3f world_coords[3];
+        Vec3f pts[3]; // screen coordinates
         for (int j = 0; j < 3; j++)
         {
-            pts[j] = world2screen(model->vert(face[j]));
+            Vec3f vertice = model->vert(face[j]);
+            pts[j] = world2screen(vertice);
+            world_coords[j] = vertice;
         }
-        triangle(pts, zbuffer, image, TGAColor(rand() % 255, rand() % 255, rand() % 255, 255));
+        Vec3f N = cross(world_coords[2] - world_coords[0], world_coords[1] - world_coords[0]); // cross product
+        N.normalize();
+        float intensity = N * light_dir; // dot product(overloading)
+        if (intensity > 0)
+        {
+            triangle(pts, zbuffer, image, TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
+        }
     }
     image.flip_vertically();
     image.write_tga_file("output\\output9_hidden-face-removal.tga");
