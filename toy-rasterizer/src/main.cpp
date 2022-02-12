@@ -13,6 +13,10 @@ const TGAColor green = TGAColor(0, 255, 0, 255);
 const int width = 800;
 const int height = 800;
 
+Model* model = nullptr;
+int* zbuffer = nullptr;
+Vec3f light_dir(0, 0, -1);
+
 void line(Vec2i p0, Vec2i p1, TGAImage& image, TGAColor color) {
     bool steep = false;
     if (std::abs(p0.x - p1.x) < std::abs(p0.y - p1.y))
@@ -61,7 +65,7 @@ Vec3f barycentric(Vec3f A, Vec3f B, Vec3f C, Vec3f P)
         return Vec3f(1.f - (u.x + u.y) / u.z, u.y / u.z, u.x / u.z);
     return Vec3f(-1, 1, 1); // in this case generate negative coordinates, it will be thrown away by the rasterizator
 }
-void triangle(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor color)
+void triangle_lines(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor color)
 {
     line(p0, p1, image, color);
     line(p1, p2, image, color);
@@ -69,7 +73,7 @@ void triangle(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor color)
 }
 
 // Scan line algorithm
-void filled_triangle(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor color)
+void triangle(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor color)
 {
     if (p0.y == p1.y && p0.y == p2.y) return;
     // sort by y(p0, p1, p2)
@@ -95,6 +99,45 @@ void filled_triangle(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor col
     }
 }
 
+// Plus Texture mapping
+void triangle(Vec3i p0, Vec3i p1, Vec3i p2, Vec2i uv0, Vec2i uv1, Vec2i uv2, TGAImage& image, float intensity, int* zbuffer)
+{
+    if (p0.y == p1.y && p0.y == p2.y) return; // in case of degenerate triangles
+    // sort by y(p0, p1, p2)
+    if (p0.y > p1.y) { std::swap(p0, p1); std::swap(uv0, uv1); }
+    if (p1.y > p2.y) { std::swap(p1, p2); std::swap(uv1, uv2); }
+    if (p0.y > p1.y) { std::swap(p0, p1); std::swap(uv0, uv1); }
+
+    int height = p2.y - p0.y;
+
+    for (int i = 0; i < height; i++)
+    {
+        bool upper = i > p1.y - p0.y || p1.y == p0.y;
+        int cutted_height = upper ? p2.y - p1.y : p1.y - p0.y;
+        float alpha = static_cast<float>(i) / height;
+        float beta = static_cast<float>(i - (upper ? p1.y - p0.y : 0)) / cutted_height;
+        Vec3i A = p0 + (p2 - p0) * alpha;
+        Vec3i B = upper ? p1 + (p2 - p1) * beta : p0 + (p1 - p0) * beta;
+        Vec2i uvA = uv0 + (uv2 - uv0) * alpha;
+        Vec2i uvB = upper ? uv1 + (uv2 - uv1) * beta : uv0 + (uv1 - uv0) * beta;
+
+        if (A.x > B.x) { std::swap(A, B); std::swap(uvA, uvB); }
+        for (int j = A.x; j <= B.x; j++)
+        {
+            float dw = A.x == B.x ? 1.0 : (float)(j - A.x) / (float)(B.x - A.x);
+            Vec3i P = A + (B - A) * dw;
+            Vec2i uvP = uvA + (uvB - uvA) * dw;
+            int idx = P.x + P.y * width;
+            if (zbuffer[idx] < P.z)
+            {
+                zbuffer[idx] = P.z; 
+                TGAColor color = model->diffuse(uvP);
+                image.set(P.x, P.y, TGAColor(color.r * intensity, color.g * intensity, color.b * intensity));
+            }
+        }
+    }
+}
+// Bounding box
 void triangle(Vec3f* pts, float* zbuffer, TGAImage& image, TGAColor color)
 {
     Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
@@ -127,48 +170,50 @@ void triangle(Vec3f* pts, float* zbuffer, TGAImage& image, TGAColor color)
             }
         }
     }
-
 }
 
-Vec3f world2screen(Vec3f v) 
+Vec3i world2screen(Vec3f v) 
 {
-    return Vec3f(int((v.x + 1.) * width / 2. + .5), int((v.y + 1.) * height / 2. + .5), v.z);
+    return Vec3i(int((v.x + 1.) * width / 2. + .5), int((v.y + 1.) * height / 2. + .5), v.z);
 }
 int main(int argc, char** argv) 
 {
     TGAImage image(width, height, TGAImage::RGB);
 
-    Model* model = new Model("obj\\african_head.obj");
+    model = new Model("obj\\african_head.obj");
 
-    Vec3f light_dir(0, 0, -1);
-
-    float* zbuffer = new float[width * height];
+    zbuffer = new int[width * height];
     for (int i = width * height; i--;)
     {
-        zbuffer[i] = -std::numeric_limits<float>::max();
+        zbuffer[i] = -std::numeric_limits<int>::max();
     }
 
     for (int i = 0; i < model->nfaces(); i++)
     {
         std::vector<int> face = model->face(i);
         Vec3f world_coords[3];
-        Vec3f pts[3]; // screen coordinates
+        Vec3i screen_coords[3]; // screen coordinates
         for (int j = 0; j < 3; j++)
         {
             Vec3f vertice = model->vert(face[j]);
-            pts[j] = world2screen(vertice);
+            screen_coords[j] = world2screen(vertice);
             world_coords[j] = vertice;
         }
-        Vec3f N = cross(world_coords[2] - world_coords[0], world_coords[1] - world_coords[0]); // cross product
+        Vec3f N = cross(world_coords[2] - world_coords[0], world_coords[1] - world_coords[0]);
         N.normalize();
         float intensity = N * light_dir; // dot product(overloading)
         if (intensity > 0)
         {
-            triangle(pts, zbuffer, image, TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
+            Vec2i uv[3];
+            for (int j = 0; j < 3; j++)
+            {
+                uv[j] = model->uv(i, j);
+            }
+            triangle(screen_coords[0], screen_coords[1], screen_coords[2], uv[0], uv[1], uv[2], image, intensity, zbuffer);
         }
     }
     image.flip_vertically();
-    image.write_tga_file("output\\output9_hidden-face-removal.tga");
+    image.write_tga_file("output\\output10_diffuse-texture.tga");
 
     delete model;
 

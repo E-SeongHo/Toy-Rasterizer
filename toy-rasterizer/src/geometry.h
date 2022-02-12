@@ -7,8 +7,8 @@ template <typename T> struct Vec2
 {
 	union 
 	{
-		struct { T u, v; };
-		struct { T x, y; };
+		struct { T u, v; }; // about texture element (texel)
+		struct { T x, y; }; 
 		T raw[2];
 	};
 	Vec2() : u(0), v(0) {}
