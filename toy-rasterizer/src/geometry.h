@@ -21,7 +21,7 @@ template <typename T> struct Vec2
 };
 
 template <typename T> struct Vec3 {
-	union 
+	union
 	{
 		struct { T x, y, z; };
 		struct { T ivert, iuv, inorm; };
@@ -29,6 +29,8 @@ template <typename T> struct Vec3 {
 	};
 	Vec3() : x(0), y(0), z(0) {}
 	Vec3(T _x, T _y, T _z) : x(_x), y(_y), z(_z) {}
+	template <typename U> Vec3(const Vec3<U>& v);
+
 	inline Vec3<T> operator ^(const Vec3<T>& v) const { return Vec3<T>(y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x); }
 	inline Vec3<T> operator +(const Vec3<T>& v) const { return Vec3<T>(x + v.x, y + v.y, z + v.z); }
 	inline Vec3<T> operator -(const Vec3<T>& v) const { return Vec3<T>(x - v.x, y - v.y, z - v.z); }
@@ -48,6 +50,16 @@ typedef Vec2<int>   Vec2i;
 typedef Vec3<float> Vec3f;
 typedef Vec3<int>   Vec3i;
 
+template<> template<> Vec3<int>::Vec3(const Vec3<float>& v);
+template<> template<> Vec3<float>::Vec3(const Vec3<int>& v);
+
+// The problem is as follows : full template specialization is no more a template, 
+// it's more like an ordinary function. So you should act accordingly :
+// 
+// either put definition of func<int>() in cpp file
+// or make it inline
+
+
 template <typename T> std::ostream& operator<<(std::ostream& s, Vec2<T>& v) {
 	s << "(" << v.x << ", " << v.y << ")\n";
 	return s;
@@ -61,3 +73,4 @@ template <typename T> std::ostream& operator<<(std::ostream& s, Vec3<T>& v) {
 template <typename T> Vec3<T> cross(Vec3<T> v1, Vec3<T> v2) {
 	return Vec3<T>(v1.y * v2.z - v1.z * v2.y, v1.z * v2.x - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x);
 }
+

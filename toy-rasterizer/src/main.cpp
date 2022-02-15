@@ -116,16 +116,16 @@ void triangle(Vec3i p0, Vec3i p1, Vec3i p2, Vec2i uv0, Vec2i uv1, Vec2i uv2, TGA
         int cutted_height = upper ? p2.y - p1.y : p1.y - p0.y;
         float alpha = static_cast<float>(i) / height;
         float beta = static_cast<float>(i - (upper ? p1.y - p0.y : 0)) / cutted_height;
-        Vec3i A = p0 + (p2 - p0) * alpha;
-        Vec3i B = upper ? p1 + (p2 - p1) * beta : p0 + (p1 - p0) * beta;
+        Vec3i A = p0 + Vec3f(p2 - p0) * alpha;
+        Vec3i B = upper ? p1 + Vec3f(p2 - p1) * beta : p0 + Vec3f(p1 - p0) * beta;
         Vec2i uvA = uv0 + (uv2 - uv0) * alpha;
         Vec2i uvB = upper ? uv1 + (uv2 - uv1) * beta : uv0 + (uv1 - uv0) * beta;
 
         if (A.x > B.x) { std::swap(A, B); std::swap(uvA, uvB); }
         for (int j = A.x; j <= B.x; j++)
         {
-            float dw = A.x == B.x ? 1.0 : (float)(j - A.x) / (float)(B.x - A.x);
-            Vec3i P = A + (B - A) * dw;
+            float dw = A.x == B.x ? 1.0f : (float)(j - A.x) / (float)(B.x - A.x);
+            Vec3i P = A + Vec3f(B - A) * dw;
             Vec2i uvP = uvA + (uvB - uvA) * dw;
             int idx = P.x + P.y * width;
             if (zbuffer[idx] < P.z)
@@ -185,7 +185,7 @@ int main(int argc, char** argv)
     zbuffer = new int[width * height];
     for (int i = width * height; i--;)
     {
-        zbuffer[i] = -std::numeric_limits<int>::max();
+        zbuffer[i] = std::numeric_limits<int>::min();
     }
 
     for (int i = 0; i < model->nfaces(); i++)
@@ -213,7 +213,7 @@ int main(int argc, char** argv)
         }
     }
     image.flip_vertically();
-    image.write_tga_file("output\\output10_diffuse-texture.tga");
+    image.write_tga_file("output\\output11_diffuse-texture.tga");
 
     delete model;
 
