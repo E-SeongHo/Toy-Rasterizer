@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <vector>
 
 template <typename T> struct Vec2
 {
@@ -53,13 +54,6 @@ typedef Vec3<int>   Vec3i;
 template<> template<> Vec3<int>::Vec3(const Vec3<float>& v);
 template<> template<> Vec3<float>::Vec3(const Vec3<int>& v);
 
-// The problem is as follows : full template specialization is no more a template, 
-// it's more like an ordinary function. So you should act accordingly :
-// 
-// either put definition of func<int>() in cpp file
-// or make it inline
-
-
 template <typename T> std::ostream& operator<<(std::ostream& s, Vec2<T>& v) {
 	s << "(" << v.x << ", " << v.y << ")\n";
 	return s;
@@ -73,4 +67,29 @@ template <typename T> std::ostream& operator<<(std::ostream& s, Vec3<T>& v) {
 template <typename T> Vec3<T> cross(Vec3<T> v1, Vec3<T> v2) {
 	return Vec3<T>(v1.y * v2.z - v1.z * v2.y, v1.z * v2.x - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x);
 }
+
+
+const int DEFAULT_ALLOC = 4;
+
+class Matrix
+{
+private:
+	std::vector<std::vector<float>> m;
+	int rows, cols;
+
+public:
+	Matrix(int r = DEFAULT_ALLOC, int c = DEFAULT_ALLOC);
+	inline int nrows();
+	inline int ncols();
+
+	static Matrix identitiy(int dimensions);
+
+	std::vector<float>& operator[](const int i); 
+	Matrix operator*(const Matrix& a);
+
+	Matrix transpose();
+	Matrix inverse();
+
+	friend std::ostream& operator<<(std::ostream& s, Matrix& m);
+};
 

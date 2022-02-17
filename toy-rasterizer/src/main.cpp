@@ -12,11 +12,42 @@ const TGAColor green = TGAColor(0, 255, 0, 255);
 
 const int width = 800;
 const int height = 800;
+const int depth = 255;
 
 Model* model = nullptr;
 int* zbuffer = nullptr;
 Vec3f light_dir(0, 0, -1);
+Vec3f camera(0, 0, 3);
 
+Vec3f m2v(Matrix m)
+{
+    return Vec3f(m[0][0] / m[3][0], m[1][0] / m[3][0], m[2][0] / m[3][0]);
+}
+
+Matrix v2m(Vec3f v)
+{
+    Matrix m(4, 1);
+    m[0][0] = v.x;
+    m[1][0] = v.y;
+    m[2][0] = v.z;
+    m[3][0] = 1.0f;
+
+    return m;
+}
+
+Matrix viewport(int x, int y, int w, int h)
+{
+    Matrix m = Matrix::identitiy(4);
+    m[0][3] = x + w / 2.0f;
+    m[1][3] = y + h / 2.0f;
+    m[2][3] = depth / 2.0f;
+
+    m[0][0] = w / 2.0f;
+    m[1][1] = h / 2.0f;
+    m[2][2] = depth / 2.0f;
+    
+    return m;
+}
 void line(Vec2i p0, Vec2i p1, TGAImage& image, TGAColor color) {
     bool steep = false;
     if (std::abs(p0.x - p1.x) < std::abs(p0.y - p1.y))
@@ -188,15 +219,19 @@ int main(int argc, char** argv)
         zbuffer[i] = std::numeric_limits<int>::min();
     }
 
+    Matrix Projection = Matrix::identitiy(4);
+    Matrix ViewPort = viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
+    Projection[3][2] = -1.0f / camera.z;
+
     for (int i = 0; i < model->nfaces(); i++)
     {
         std::vector<int> face = model->face(i);
         Vec3f world_coords[3];
-        Vec3i screen_coords[3]; // screen coordinates
+        Vec3i screen_coords[3];
         for (int j = 0; j < 3; j++)
         {
             Vec3f vertice = model->vert(face[j]);
-            screen_coords[j] = world2screen(vertice);
+            screen_coords[j] = m2v(ViewPort * Projection * v2m(vertice));
             world_coords[j] = vertice;
         }
         Vec3f N = cross(world_coords[2] - world_coords[0], world_coords[1] - world_coords[0]);
@@ -213,9 +248,21 @@ int main(int argc, char** argv)
         }
     }
     image.flip_vertically();
-    image.write_tga_file("output\\output11_diffuse-texture.tga");
+    image.write_tga_file("output\\output12_perpective-projection.tga");
+
+    { // dump z-buffer (debugging purposes only)
+        TGAImage zbimage(width, height, TGAImage::GRAYSCALE);
+        for (int i = 0; i < width; i++) {
+            for (int j = 0; j < height; j++) {
+                zbimage.set(i, j, TGAColor(zbuffer[i + j * width], 1));
+            }
+        }
+        zbimage.flip_vertically(); 
+        zbimage.write_tga_file("zbuffer.tga");
+    }
 
     delete model;
+    delete[] zbuffer;
 
     return 0;
 }
