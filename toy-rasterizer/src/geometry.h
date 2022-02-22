@@ -4,6 +4,8 @@
 #include <iostream>
 #include <vector>
 
+class Matrix;
+
 template <typename T> struct Vec2
 {
 	union 
@@ -30,6 +32,7 @@ template <typename T> struct Vec3 {
 	};
 	Vec3() : x(0), y(0), z(0) {}
 	Vec3(T _x, T _y, T _z) : x(_x), y(_y), z(_z) {}
+	Vec3(Matrix m);
 	template <typename U> Vec3(const Vec3<U>& v);
 
 	inline Vec3<T> operator ^(const Vec3<T>& v) const { return Vec3<T>(y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x); }
@@ -69,8 +72,6 @@ template <typename T> Vec3<T> cross(Vec3<T> v1, Vec3<T> v2) {
 }
 
 
-const int DEFAULT_ALLOC = 4;
-
 class Matrix
 {
 private:
@@ -78,11 +79,12 @@ private:
 	int rows, cols;
 
 public:
-	Matrix(int r = DEFAULT_ALLOC, int c = DEFAULT_ALLOC);
+	Matrix(int r = 4, int c = 4);
+	Matrix(Vec3f v);
 	inline int nrows();
 	inline int ncols();
 
-	static Matrix identitiy(int dimensions);
+	static Matrix identity(int dimensions);
 
 	std::vector<float>& operator[](const int i); 
 	Matrix operator*(const Matrix& a);

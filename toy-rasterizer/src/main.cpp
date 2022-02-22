@@ -16,28 +16,13 @@ const int depth = 255;
 
 Model* model = nullptr;
 int* zbuffer = nullptr;
-Vec3f light_dir(0, 0, -1);
-Vec3f camera(0, 0, 3);
-
-Vec3f m2v(Matrix m)
-{
-    return Vec3f(m[0][0] / m[3][0], m[1][0] / m[3][0], m[2][0] / m[3][0]);
-}
-
-Matrix v2m(Vec3f v)
-{
-    Matrix m(4, 1);
-    m[0][0] = v.x;
-    m[1][0] = v.y;
-    m[2][0] = v.z;
-    m[3][0] = 1.0f;
-
-    return m;
-}
+Vec3f light_dir = Vec3f(1, -1, 1).normalize();
+Vec3f camera(1, 1, 3);
+Vec3f center(0, 0, 0);
 
 Matrix viewport(int x, int y, int w, int h)
 {
-    Matrix m = Matrix::identitiy(4);
+    Matrix m = Matrix::identity(4);
     m[0][3] = x + w / 2.0f;
     m[1][3] = y + h / 2.0f;
     m[2][3] = depth / 2.0f;
@@ -48,6 +33,23 @@ Matrix viewport(int x, int y, int w, int h)
     
     return m;
 }
+
+Matrix lookat(Vec3f eye, Vec3f center, Vec3f up)
+{
+    Vec3f z = (eye - center).normalize();
+    Vec3f x = cross(up, z).normalize();
+    Vec3f y = cross(z, x).normalize();
+    Matrix res = Matrix::identity(4);
+    for (int i = 0; i < 3; i++)
+    {
+        res[0][i] = x[i];
+        res[1][i] = y[i];
+        res[2][i] = z[i];
+        res[i][3] = -center[i];
+    }
+    return res;
+}
+
 void line(Vec2i p0, Vec2i p1, TGAImage& image, TGAColor color) {
     bool steep = false;
     if (std::abs(p0.x - p1.x) < std::abs(p0.y - p1.y))
@@ -168,6 +170,45 @@ void triangle(Vec3i p0, Vec3i p1, Vec3i p2, Vec2i uv0, Vec2i uv1, Vec2i uv2, TGA
         }
     }
 }
+
+// Gouraud Shading
+void triangle(Vec3i p0, Vec3i p1, Vec3i p2, float iy0, float iy1, float iy2, TGAImage& image, int* zbuffer)
+{
+    if (p0.y == p1.y && p0.y == p2.y) return; // in case of degenerate triangles
+    // sort by y(p0, p1, p2)
+    if (p0.y > p1.y) { std::swap(p0, p1); std::swap(iy0, iy1); }
+    if (p1.y > p2.y) { std::swap(p1, p2); std::swap(iy1, iy2); }
+    if (p0.y > p1.y) { std::swap(p0, p1); std::swap(iy0, iy1); }
+
+    int height = p2.y - p0.y;
+
+    for (int i = 0; i < height; i++)
+    {
+        bool upper = i > p1.y - p0.y || p1.y == p0.y;
+        int cutted_height = upper ? p2.y - p1.y : p1.y - p0.y;
+        float alpha = static_cast<float>(i) / height;
+        float beta = static_cast<float>(i - (upper ? p1.y - p0.y : 0)) / cutted_height;
+        Vec3i A = p0 + Vec3f(p2 - p0) * alpha;
+        Vec3i B = upper ? p1 + Vec3f(p2 - p1) * beta : p0 + Vec3f(p1 - p0) * beta;
+        float iyA = iy0 + (iy2 - iy0) * alpha;
+        float iyB = upper ? iy1 + (iy2 - iy1) * beta : iy0 + (iy1 - iy0) * beta;
+
+        if (A.x > B.x) { std::swap(A, B); std::swap(iyA, iyB); }
+        for (int j = A.x; j <= B.x; j++)
+        {
+            float dw = A.x == B.x ? 1.0f : (float)(j - A.x) / (float)(B.x - A.x);
+            Vec3i P = A + Vec3f(B - A) * dw;
+            float iyP = iyA + (iyB - iyA) * dw;
+            int idx = P.x + P.y * width;
+            if (zbuffer[idx] < P.z)
+            {
+                zbuffer[idx] = P.z;
+                image.set(P.x, P.y, TGAColor(255, 255, 255) * iyP);
+            }
+        }
+    }
+}
+
 // Bounding box
 void triangle(Vec3f* pts, float* zbuffer, TGAImage& image, TGAColor color)
 {
@@ -219,36 +260,28 @@ int main(int argc, char** argv)
         zbuffer[i] = std::numeric_limits<int>::min();
     }
 
-    Matrix Projection = Matrix::identitiy(4);
+    Matrix ModelView = lookat(camera, center, Vec3f(0, 1, 0));
+    Matrix Projection = Matrix::identity(4);
     Matrix ViewPort = viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
-    Projection[3][2] = -1.0f / camera.z;
+    Projection[3][2] = -1.0f / (camera - center).norm();
 
     for (int i = 0; i < model->nfaces(); i++)
     {
         std::vector<int> face = model->face(i);
         Vec3f world_coords[3];
         Vec3i screen_coords[3];
+        float intensity[3];
         for (int j = 0; j < 3; j++)
         {
             Vec3f vertice = model->vert(face[j]);
-            screen_coords[j] = m2v(ViewPort * Projection * v2m(vertice));
+            screen_coords[j] = Vec3f(ViewPort * Projection * ModelView * Matrix(vertice));
             world_coords[j] = vertice;
+            intensity[j] = model->norm(i, j) * light_dir;
         }
-        Vec3f N = cross(world_coords[2] - world_coords[0], world_coords[1] - world_coords[0]);
-        N.normalize();
-        float intensity = N * light_dir; // dot product(overloading)
-        if (intensity > 0)
-        {
-            Vec2i uv[3];
-            for (int j = 0; j < 3; j++)
-            {
-                uv[j] = model->uv(i, j);
-            }
-            triangle(screen_coords[0], screen_coords[1], screen_coords[2], uv[0], uv[1], uv[2], image, intensity, zbuffer);
-        }
+        triangle(screen_coords[0], screen_coords[1], screen_coords[2], intensity[0], intensity[1], intensity[2], image, zbuffer);
     }
     image.flip_vertically();
-    image.write_tga_file("output\\output12_perpective-projection.tga");
+    image.write_tga_file("output\\output13_camera-move.tga");
 
     { // dump z-buffer (debugging purposes only)
         TGAImage zbimage(width, height, TGAImage::GRAYSCALE);

@@ -52,6 +52,15 @@ struct TGAColor
 		}
 		return *this;
 	}
+	TGAColor& operator*(float intensity)
+	{
+		intensity = (intensity > 1.0f ? 1.0f : (intensity < 0.0f ? 0.0f : intensity));
+		for (int i = 0; i < 4; i++)
+		{
+			raw[i] = raw[i] * intensity;
+		}
+		return *this;
+	}
 
 };
 

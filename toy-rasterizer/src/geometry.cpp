@@ -2,20 +2,28 @@
 #include "geometry.h"
 
 template<> template<> Vec3<int>::Vec3(const Vec3<float>& v)
-	: x(v.x + 0.5f), y(v.y + 0.5f), z(v.z + 0.5f) { }
+	: x(v.x + 0.5f), y(v.y + 0.5f), z(v.z + 0.5f) {}
 template<> template<> Vec3<float>::Vec3(const Vec3<int>& v)
-	: x(v.x), y(v.y), z(v.z) { }
-
+	: x(v.x), y(v.y), z(v.z) {}
+template<> Vec3<float>::Vec3(Matrix m)
+    : x(m[0][0] / m[3][0]), y(m[1][0] / m[3][0]), z(m[2][0] / m[3][0]) {}
 
 
 Matrix::Matrix(int r, int c)
 	: m(std::vector<std::vector<float>>(r, std::vector<float>(c, 0.0f))), rows(r), cols(c) {}
 
+Matrix::Matrix(Vec3f v)
+    : m(std::vector<std::vector<float>>(4, std::vector<float>(1, 1.0f))), rows(4), cols(1)
+{
+    m[0][0] = v.x;
+    m[1][0] = v.y;
+    m[2][0] = v.z;
+}
 int Matrix::nrows() { return rows; }
 
 int Matrix::ncols() { return cols; }
 
-Matrix Matrix::identitiy(int dimensions)
+Matrix Matrix::identity(int dimensions)
 {
 	Matrix E(dimensions, dimensions);
 	for (int i = 0; i < dimensions; i++)
