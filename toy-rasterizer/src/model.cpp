@@ -79,6 +79,12 @@ std::vector<int> Model::face(int idx)
 
 Vec3f Model::vert(int i) { return verts_[i]; }
 
+Vec3f Model::vert(int iface, int nvert) 
+{
+	int idx = faces_[iface][nvert][0];
+	return verts_[idx];
+}
+
 void Model::load_texture(std::string filename, const char* suffix, TGAImage& img)
 {
 	std::string textfile(filename);

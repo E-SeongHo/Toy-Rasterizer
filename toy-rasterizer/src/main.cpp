@@ -12,7 +12,6 @@ const TGAColor green = TGAColor(0, 255, 0, 255);
 
 const int width = 800;
 const int height = 800;
-const int depth = 255;
 
 Model* model = nullptr;
 int* zbuffer = nullptr;
@@ -20,16 +19,20 @@ Vec3f light_dir = Vec3f(1, -1, 1).normalize();
 Vec3f camera(1, 1, 3);
 Vec3f center(0, 0, 0);
 
+Matrix ModelView;
+Matrix Projection;
+Matrix ViewPort;
+
 Matrix viewport(int x, int y, int w, int h)
 {
     Matrix m = Matrix::identity(4);
     m[0][3] = x + w / 2.0f;
     m[1][3] = y + h / 2.0f;
-    m[2][3] = depth / 2.0f;
+    m[2][3] = 255.0f / 2.0f;
 
     m[0][0] = w / 2.0f;
     m[1][1] = h / 2.0f;
-    m[2][2] = depth / 2.0f;
+    m[2][2] = 255.0f / 2.0f;
     
     return m;
 }
@@ -98,6 +101,63 @@ Vec3f barycentric(Vec3f A, Vec3f B, Vec3f C, Vec3f P)
         return Vec3f(1.f - (u.x + u.y) / u.z, u.y / u.z, u.x / u.z);
     return Vec3f(-1, 1, 1); // in this case generate negative coordinates, it will be thrown away by the rasterizator
 }
+
+
+struct IShader
+{
+    virtual ~IShader() {}
+    virtual Vec3f vertex(int iface, int nvert) = 0;
+    virtual bool fragment(Vec3f bar, TGAColor& color) = 0;
+};
+
+struct Shader : IShader
+{
+    Vec2i varying_uv[3];
+    float varying_intensity[3];
+
+    virtual ~Shader() {}
+    virtual Vec3f vertex(int iface, int nvert)
+    {
+        varying_uv[nvert] = model->uv(iface, nvert);
+        varying_intensity[nvert] = model->norm(iface, nvert) * light_dir;
+
+        Vec3f vertex = model->vert(iface, nvert);
+        Vec3f transformed_vertex = ViewPort * Projection * ModelView * Matrix(vertex);
+        return transformed_vertex;
+    }
+    virtual bool fragment(Vec3f bar, TGAColor& color)
+    {
+        // get uv, intensity at bar
+        Vec2i uv = varying_uv[0] * bar.x + varying_uv[1] * bar.y + varying_uv[2] * bar.z;
+        float intensity = bar.x * varying_intensity[0] + bar.y * varying_intensity[1] + bar.z * varying_intensity[2];
+        intensity = std::max(0.0f, std::min(1.0f, intensity));
+
+        color = model->diffuse(uv) * intensity;
+        return false;
+    }
+};
+
+struct GouraudShader : IShader
+{
+    // varying : share value in vertex shader and fragment shader
+    float varying_intensity[3];
+
+    virtual ~GouraudShader() {}
+    virtual Vec3f vertex(int iface, int nvert)
+    {
+        varying_intensity[nvert] = model->norm(iface, nvert) * light_dir;
+        Vec3f vertex = model->vert(iface, nvert);
+        Vec3f transformed_vertex = ViewPort * Projection * ModelView * Matrix(vertex);
+        return transformed_vertex;
+    }
+    virtual bool fragment(Vec3f bar, TGAColor& color)
+    {
+        float intensity = bar[0] * varying_intensity[0] + bar[1] * varying_intensity[1] + bar[2] * varying_intensity[2];
+        intensity = std::max(0.0f, std::min(1.0f, intensity));
+        color = TGAColor(255, 255, 255) * intensity;
+        return false;
+    }
+};
 void triangle_lines(Vec2i p0, Vec2i p1, Vec2i p2, TGAImage& image, TGAColor color)
 {
     line(p0, p1, image, color);
@@ -210,20 +270,20 @@ void triangle(Vec3i p0, Vec3i p1, Vec3i p2, float iy0, float iy1, float iy2, TGA
 }
 
 // Bounding box
-void triangle(Vec3f* pts, float* zbuffer, TGAImage& image, TGAColor color)
+void triangle(Vec3i* pts, IShader& shader, TGAImage& image, int* zbuffer)
 {
-    Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-    Vec2f bboxmax(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
-    Vec2f clamp(image.get_width() - 1, image.get_height() - 1);
+    Vec2i bboxmin(std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
+    Vec2i bboxmax(-std::numeric_limits<int>::max(), -std::numeric_limits<int>::max());
+    Vec2i clamp(image.get_width() - 1, image.get_height() - 1);
     for (int i = 0; i < 3; i++) 
     {
         for (int j = 0; j < 2; j++) 
         {
-            bboxmin[j] = std::max(0.0f, std::min(bboxmin[j], pts[i][j]));
+            bboxmin[j] = std::max(0, std::min(bboxmin[j], pts[i][j]));
             bboxmax[j] = std::min(clamp[j], std::max(bboxmax[j], pts[i][j]));
         }
     }
-    Vec3f P;
+    Vec3i P;
     for (P.x = bboxmin.x; P.x <= bboxmax.x; P.x++)
     {
         for (P.y = bboxmin.y; P.y <= bboxmax.y; P.y++)
@@ -233,21 +293,25 @@ void triangle(Vec3f* pts, float* zbuffer, TGAImage& image, TGAColor color)
             P.z = 0;
             for (int i = 0; i < 3; i++)
             {
-                P.z += pts[i][2] * bc[i]; // find z-index in P with u,v 
+                P.z += pts[i].z * bc[i]; // find z-index in P with u,v 
             }
-            if (zbuffer[static_cast<int>(P.x + P.y * width)] < P.z)
+            int idx = P.x + P.y * width;
+            if (zbuffer[idx] < P.z)
             {
-                zbuffer[static_cast<int>(P.x + P.y * width)] = P.z;
-                image.set(P.x, P.y, color);
+                zbuffer[idx] = P.z;
+                TGAColor color;
+                bool discard = shader.fragment(bc, color);
+                if (!discard)
+                {
+                    image.set(P.x, P.y, color);
+                }
             }
         }
     }
 }
 
-Vec3i world2screen(Vec3f v) 
-{
-    return Vec3i(int((v.x + 1.) * width / 2. + .5), int((v.y + 1.) * height / 2. + .5), v.z);
-}
+
+
 int main(int argc, char** argv) 
 {
     TGAImage image(width, height, TGAImage::RGB);
@@ -260,28 +324,27 @@ int main(int argc, char** argv)
         zbuffer[i] = std::numeric_limits<int>::min();
     }
 
-    Matrix ModelView = lookat(camera, center, Vec3f(0, 1, 0));
-    Matrix Projection = Matrix::identity(4);
-    Matrix ViewPort = viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
+    ModelView = lookat(camera, center, Vec3f(0, 1, 0));
+    Projection = Matrix::identity(4);
+    ViewPort = viewport(width / 8, height / 8, width * 3 / 4, height * 3 / 4);
     Projection[3][2] = -1.0f / (camera - center).norm();
+
+    Shader shader;
+    GouraudShader gShader;
 
     for (int i = 0; i < model->nfaces(); i++)
     {
-        std::vector<int> face = model->face(i);
-        Vec3f world_coords[3];
         Vec3i screen_coords[3];
-        float intensity[3];
+        // Vertex Shader
         for (int j = 0; j < 3; j++)
         {
-            Vec3f vertice = model->vert(face[j]);
-            screen_coords[j] = Vec3f(ViewPort * Projection * ModelView * Matrix(vertice));
-            world_coords[j] = vertice;
-            intensity[j] = model->norm(i, j) * light_dir;
+            screen_coords[j] = gShader.vertex(i, j);
         }
-        triangle(screen_coords[0], screen_coords[1], screen_coords[2], intensity[0], intensity[1], intensity[2], image, zbuffer);
+        // Rasterizer (callback Fragment Shader each pixel)
+        triangle(screen_coords, gShader, image, zbuffer);
     }
     image.flip_vertically();
-    image.write_tga_file("output\\output13_camera-move.tga");
+    image.write_tga_file("output\\output14.tga");
 
     { // dump z-buffer (debugging purposes only)
         TGAImage zbimage(width, height, TGAImage::GRAYSCALE);
