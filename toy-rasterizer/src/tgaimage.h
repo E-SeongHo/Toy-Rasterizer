@@ -43,6 +43,12 @@ struct TGAColor
 			raw[i] = p[i];
 		}
 	}
+	TGAColor(const unsigned char v) : val(0), bytespp(1)
+	{
+		for (int i = 0; i < 4; i++) raw[i] = 0;
+		raw[0] = v;
+	}
+	unsigned char& operator[](const int i) { return raw[i]; }
 	TGAColor& operator=(const TGAColor& c)
 	{
 		if (this != &c)
